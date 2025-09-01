@@ -1,0 +1,451 @@
+{
+  "name": "Daily Citation Collection",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            }
+          ]
+        }
+      },
+      "id": "1",
+      "name": "Daily Trigger",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "requestMethod": "GET",
+        "url": "={{$env.AI_SEARCH_API_BASE_URL}}/api/v1/queries/active",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "2",
+      "name": "Get Active Queries",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [400, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ai_search_api",
+          "name": "AI Search API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition1",
+              "leftValue": "={{$json.queries.length}}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "3",
+      "name": "Check Queries Exist",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [600, 300]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "queries",
+        "options": {}
+      },
+      "id": "4",
+      "name": "Split Queries",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [800, 240]
+    },
+    {
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "={{$env.AI_SEARCH_API_BASE_URL}}/api/v1/citations/collect/google",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"query\": \"{{$json.query_text}}\", \"query_id\": \"{{$json.id}}\"}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "5",
+      "name": "Collect Google Citations",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1000, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ai_search_api",
+          "name": "AI Search API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "={{$env.AI_SEARCH_API_BASE_URL}}/api/v1/citations/collect/perplexity",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"query\": \"{{$json.query_text}}\", \"query_id\": \"{{$json.id}}\"}",
+        "options": {
+          "timeout": 45000
+        }
+      },
+      "id": "6",
+      "name": "Collect Perplexity Citations",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1000, 280],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ai_search_api",
+          "name": "AI Search API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "id": "7",
+      "name": "Combine Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [1200, 240]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO citation_history (query_id, engine, url, position, citation_type, prominence_score, timestamp) VALUES ('{{$json.query_id}}', '{{$json.engine}}', '{{$json.url}}', {{$json.position}}, '{{$json.citation_type}}', {{$json.prominence_score}}, NOW())",
+        "options": {}
+      },
+      "id": "8",
+      "name": "Store Citation History",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1400, 240],
+      "credentials": {
+        "postgres": {
+          "id": "ai_search_db",
+          "name": "AI Search Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE queries SET last_collected = NOW() WHERE id = '{{$json.query_id}}'",
+        "options": {}
+      },
+      "id": "9",
+      "name": "Update Query Status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1600, 240],
+      "credentials": {
+        "postgres": {
+          "id": "ai_search_db",
+          "name": "AI Search Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition1",
+              "leftValue": "={{$json.error}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "10",
+      "name": "Check for Errors",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1200, 400]
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "httpMethod": "POST",
+        "url": "={{$env.SLACK_WEBHOOK_URL}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"text\": \"⚠️ Citation Collection Error\", \"attachments\": [{\"color\": \"danger\", \"text\": \"Error collecting citations for query: {{$json.query_text}}\\nError: {{$json.error}}\", \"ts\": \"{{Math.floor(Date.now() / 1000)}}\"}]}",
+        "options": {}
+      },
+      "id": "11",
+      "name": "Send Error Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1400, 460]
+    },
+    {
+      "parameters": {
+        "amount": 2,
+        "unit": "seconds"
+      },
+      "id": "12",
+      "name": "Rate Limit Delay",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1000, 360]
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "httpMethod": "POST",
+        "url": "={{$env.SLACK_WEBHOOK_URL}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"text\": \"✅ Daily Citation Collection Complete\", \"attachments\": [{\"color\": \"good\", \"text\": \"Successfully collected citations for {{$json.total_queries}} queries\\nTotal citations: {{$json.total_citations}}\\nTimestamp: {{new Date().toISOString()}}\", \"ts\": \"{{Math.floor(Date.now() / 1000)}}\"}]}",
+        "options": {}
+      },
+      "id": "13",
+      "name": "Send Success Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1800, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate summary statistics\nconst items = $input.all();\nconst totalQueries = new Set(items.map(item => item.json.query_id)).size;\nconst totalCitations = items.length;\nconst engines = [...new Set(items.map(item => item.json.engine))];\nconst avgCitationsPerQuery = totalCitations / totalQueries;\n\nreturn {\n  json: {\n    total_queries: totalQueries,\n    total_citations: totalCitations,\n    engines: engines,\n    avg_citations_per_query: Math.round(avgCitationsPerQuery * 100) / 100,\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "14",
+      "name": "Calculate Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1600, 240]
+    },
+    {
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "={{$env.AI_SEARCH_API_BASE_URL}}/api/v1/system/metrics",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"metric_name\": \"daily_citation_collection\", \"metric_value\": {{$json.total_citations}}, \"metric_type\": \"counter\", \"labels\": {\"status\": \"success\", \"engines\": \"{{$json.engines.join(',')}}\"}}",
+        "options": {}
+      },
+      "id": "15",
+      "name": "Log Metrics",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1800, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ai_search_api",
+          "name": "AI Search API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Active Queries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Active Queries": {
+      "main": [
+        [
+          {
+            "node": "Check Queries Exist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Queries Exist": {
+      "main": [
+        [
+          {
+            "node": "Split Queries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Queries": {
+      "main": [
+        [
+          {
+            "node": "Collect Google Citations",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Collect Perplexity Citations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Google Citations": {
+      "main": [
+        [
+          {
+            "node": "Combine Results",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check for Errors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Perplexity Citations": {
+      "main": [
+        [
+          {
+            "node": "Rate Limit Delay",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rate Limit Delay": {
+      "main": [
+        [
+          {
+            "node": "Combine Results",
+            "type": "main",
+            "index": 1
+          },
+          {
+            "node": "Check for Errors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Results": {
+      "main": [
+        [
+          {
+            "node": "Store Citation History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Citation History": {
+      "main": [
+        [
+          {
+            "node": "Update Query Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Query Status": {
+      "main": [
+        [
+          {
+            "node": "Calculate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Summary": {
+      "main": [
+        [
+          {
+            "node": "Send Success Summary",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check for Errors": {
+      "main": [
+        [
+          {
+            "node": "Send Error Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "id": "citation-collection",
+      "name": "Citation Collection"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-15T10:00:00.000Z",
+  "versionId": "1"
+}

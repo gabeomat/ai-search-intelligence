@@ -1,0 +1,483 @@
+{
+  "name": "Content Opportunity Alerts",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "cronExpression": "0 14 * * *"
+            }
+          ]
+        }
+      },
+      "id": "1",
+      "name": "Daily 2PM Trigger",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "={{$env.AI_SEARCH_API_BASE_URL}}/api/v1/analysis/gaps",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"min_opportunity_score\": 0.7, \"time_range\": \"24h\", \"limit\": 50}",
+        "options": {}
+      },
+      "id": "2",
+      "name": "Find High-Opportunity Gaps",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [400, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ai_search_api",
+          "name": "AI Search API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition1",
+              "leftValue": "={{$json.gaps.length}}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "3",
+      "name": "Check Opportunities Exist",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [600, 300]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "gaps",
+        "options": {}
+      },
+      "id": "4",
+      "name": "Split Opportunities",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [800, 240]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition1",
+              "leftValue": "={{$json.opportunity_score}}",
+              "rightValue": 0.8,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "5",
+      "name": "Filter High Priority",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1000, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition1",
+              "leftValue": "={{$json.opportunity_score}}",
+              "rightValue": 0.7,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            },
+            {
+              "id": "condition2", 
+              "leftValue": "={{$json.opportunity_score}}",
+              "rightValue": 0.8,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "6",
+      "name": "Filter Medium Priority",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1000, 280]
+    },
+    {
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "={{$env.AI_SEARCH_API_BASE_URL}}/api/v1/action-items",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"title\": \"HIGH PRIORITY: Create {{$json.suggested_content_type}} for '{{$json.query_text}}'\", \"description\": \"{{$json.reasoning}}\", \"action_type\": \"create_content\", \"priority\": \"high\", \"estimated_effort\": \"{{$json.estimated_effort}}\", \"expected_impact\": {{$json.opportunity_score}}, \"related_query\": \"{{$json.query_text}}\", \"status\": \"pending\", \"due_date\": \"{{new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()}}\"}",
+        "options": {}
+      },
+      "id": "7",
+      "name": "Create High Priority Action",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1200, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ai_search_api",
+          "name": "AI Search API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "={{$env.AI_SEARCH_API_BASE_URL}}/api/v1/action-items",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"title\": \"Create {{$json.suggested_content_type}} for '{{$json.query_text}}'\", \"description\": \"{{$json.reasoning}}\", \"action_type\": \"create_content\", \"priority\": \"medium\", \"estimated_effort\": \"{{$json.estimated_effort}}\", \"expected_impact\": {{$json.opportunity_score}}, \"related_query\": \"{{$json.query_text}}\", \"status\": \"pending\", \"due_date\": \"{{new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()}}\"}",
+        "options": {}
+      },
+      "id": "8",
+      "name": "Create Medium Priority Action",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1200, 280],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ai_search_api",
+          "name": "AI Search API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "httpMethod": "POST",
+        "url": "={{$env.SLACK_WEBHOOK_URL}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"text\": \"🚨 HIGH PRIORITY Content Opportunity\", \"attachments\": [{\"color\": \"danger\", \"title\": \"{{$json.query_text}}\", \"fields\": [{\"title\": \"Opportunity Score\", \"value\": \"{{$json.opportunity_score.toFixed(2)}}\", \"short\": true}, {\"title\": \"Content Type\", \"value\": \"{{$json.suggested_content_type}}\", \"short\": true}, {\"title\": \"Estimated Effort\", \"value\": \"{{$json.estimated_effort}}\", \"short\": true}, {\"title\": \"Gap Type\", \"value\": \"{{$json.gap_type}}\", \"short\": true}], \"text\": \"{{$json.reasoning}}\\n\\n**Content Angles:**\\n{{$json.content_angle_suggestions.slice(0, 3).map(angle => '• ' + angle).join('\\n')}}\", \"mrkdwn_in\": [\"text\"]}]}",
+        "options": {}
+      },
+      "id": "9",
+      "name": "Alert High Priority Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1400, 200]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "id": "10",
+      "name": "Combine All Opportunities",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [1200, 360]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate daily opportunity summary\nconst items = $input.all();\nif (!items.length) return { json: { no_opportunities: true } };\n\nconst highPriority = items.filter(item => item.json.opportunity_score >= 0.8);\nconst mediumPriority = items.filter(item => item.json.opportunity_score >= 0.7 && item.json.opportunity_score < 0.8);\n\nconst gapTypes = {};\nconst contentTypes = {};\nconst topics = new Set();\n\nitems.forEach(item => {\n  const gap = item.json;\n  gapTypes[gap.gap_type] = (gapTypes[gap.gap_type] || 0) + 1;\n  contentTypes[gap.suggested_content_type] = (contentTypes[gap.suggested_content_type] || 0) + 1;\n  gap.suggested_topics.forEach(topic => topics.add(topic));\n});\n\nconst summary = {\n  total_opportunities: items.length,\n  high_priority_count: highPriority.length,\n  medium_priority_count: mediumPriority.length,\n  avg_opportunity_score: (items.reduce((sum, item) => sum + item.json.opportunity_score, 0) / items.length).toFixed(2),\n  gap_type_distribution: gapTypes,\n  content_type_recommendations: contentTypes,\n  trending_topics: Array.from(topics).slice(0, 10),\n  top_opportunities: items.sort((a, b) => b.json.opportunity_score - a.json.opportunity_score).slice(0, 5).map(item => ({\n    query: item.json.query_text,\n    score: item.json.opportunity_score,\n    type: item.json.suggested_content_type,\n    gap_type: item.json.gap_type\n  })),\n  timestamp: new Date().toISOString()\n};\n\nreturn { json: summary };"
+      },
+      "id": "11",
+      "name": "Generate Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1400, 360]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition1",
+              "leftValue": "={{$json.high_priority_count}}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "12",
+      "name": "Check High Priority Exists",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1600, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "httpMethod": "POST",
+        "url": "={{$env.SLACK_WEBHOOK_URL}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"text\": \"📊 Daily Content Opportunity Summary\", \"attachments\": [{\"color\": \"#36a64f\", \"title\": \"Opportunities Identified: {{$json.total_opportunities}}\", \"fields\": [{\"title\": \"High Priority\", \"value\": \"{{$json.high_priority_count}}\", \"short\": true}, {\"title\": \"Medium Priority\", \"value\": \"{{$json.medium_priority_count}}\", \"short\": true}, {\"title\": \"Avg Score\", \"value\": \"{{$json.avg_opportunity_score}}\", \"short\": true}], \"text\": \"**Top Opportunities:**\\n{{$json.top_opportunities.map((opp, idx) => `${idx + 1}. **${opp.query}** (${opp.score.toFixed(2)})\\n   → ${opp.type}`).join('\\n\\n')}}\\n\\n**Content Types Needed:**\\n{{Object.entries($json.content_type_recommendations).map(([type, count]) => `• ${type}: ${count}`).join('\\n')}}\", \"mrkdwn_in\": [\"text\"]}]}",
+        "options": {}
+      },
+      "id": "13",
+      "name": "Send Daily Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1800, 360]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{$env.SMTP_FROM_EMAIL}}",
+        "toEmail": "={{$env.CONTENT_TEAM_EMAIL}}",
+        "subject": "🚨 {{$json.high_priority_count}} High-Priority Content Opportunities Identified",
+        "emailType": "text",
+        "message": "High-priority content opportunities have been identified:\\n\\n{{$json.top_opportunities.filter(opp => opp.score >= 0.8).map((opp, idx) => `${idx + 1}. ${opp.query} (Score: ${opp.score.toFixed(2)})\\n   Content Type: ${opp.type}\\n   Gap Type: ${opp.gap_type}\\n`).join('\\n')}}\\n\\nAction items have been automatically created in the system.\\n\\nView full details in the AI Search Intelligence dashboard.",
+        "options": {}
+      },
+      "id": "14",
+      "name": "Email High Priority Alert",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1800, 200],
+      "credentials": {
+        "smtp": {
+          "id": "email_smtp",
+          "name": "Email SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "={{$env.AI_SEARCH_API_BASE_URL}}/api/v1/system/metrics",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"metric_name\": \"daily_content_opportunities\", \"metric_value\": {{$json.total_opportunities}}, \"metric_type\": \"gauge\", \"labels\": {\"high_priority\": \"{{$json.high_priority_count}}\", \"medium_priority\": \"{{$json.medium_priority_count}}\"}}",
+        "options": {}
+      },
+      "id": "15",
+      "name": "Log Opportunity Metrics",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1600, 420],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ai_search_api",
+          "name": "AI Search API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily 2PM Trigger": {
+      "main": [
+        [
+          {
+            "node": "Find High-Opportunity Gaps",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find High-Opportunity Gaps": {
+      "main": [
+        [
+          {
+            "node": "Check Opportunities Exist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Opportunities Exist": {
+      "main": [
+        [
+          {
+            "node": "Split Opportunities",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Opportunities": {
+      "main": [
+        [
+          {
+            "node": "Filter High Priority",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Filter Medium Priority",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Combine All Opportunities",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter High Priority": {
+      "main": [
+        [
+          {
+            "node": "Create High Priority Action",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Alert High Priority Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Medium Priority": {
+      "main": [
+        [
+          {
+            "node": "Create Medium Priority Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create High Priority Action": {
+      "main": [
+        [
+          {
+            "node": "Combine All Opportunities",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Create Medium Priority Action": {
+      "main": [
+        [
+          {
+            "node": "Combine All Opportunities",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Combine All Opportunities": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Summary": {
+      "main": [
+        [
+          {
+            "node": "Check High Priority Exists",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Daily Summary",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Opportunity Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check High Priority Exists": {
+      "main": [
+        [
+          {
+            "node": "Email High Priority Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "id": "content-opportunities",
+      "name": "Content Opportunities"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-15T10:00:00.000Z",
+  "versionId": "1"
+}

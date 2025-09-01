@@ -1,0 +1,393 @@
+{
+  "name": "Weekly Intelligence Report",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "cronExpression": "0 8 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "1",
+      "name": "Weekly Trigger",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [200, 400]
+    },
+    {
+      "parameters": {
+        "requestMethod": "GET",
+        "url": "={{$env.AI_SEARCH_API_BASE_URL}}/api/v1/analytics/citations/weekly-summary",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "2",
+      "name": "Get Weekly Citation Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [400, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ai_search_api",
+          "name": "AI Search API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "={{$env.AI_SEARCH_API_BASE_URL}}/api/v1/analysis/patterns",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"time_range\": \"7d\", \"include_insights\": true}",
+        "options": {}
+      },
+      "id": "3",
+      "name": "Analyze Citation Patterns",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [400, 400],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ai_search_api",
+          "name": "AI Search API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "={{$env.AI_SEARCH_API_BASE_URL}}/api/v1/analysis/gaps",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"min_opportunity_score\": 0.6, \"limit\": 20}",
+        "options": {}
+      },
+      "id": "4",
+      "name": "Identify Content Gaps",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [400, 500],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ai_search_api",
+          "name": "AI Search API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "requestMethod": "GET",
+        "url": "={{$env.AI_SEARCH_API_BASE_URL}}/api/v1/competitors/weekly-analysis",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "5",
+      "name": "Get Competitor Analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [400, 600],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ai_search_api",
+          "name": "AI Search API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "id": "6",
+      "name": "Combine Analysis Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [600, 450]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate comprehensive intelligence report\nconst items = $input.all();\nconst citationData = items[0].json;\nconst patterns = items[1].json;\nconst gaps = items[2].json;\nconst competitors = items[3].json;\n\n// Calculate key metrics\nconst totalCitations = citationData.total_citations || 0;\nconst weekOverWeekGrowth = citationData.week_over_week_growth || 0;\nconst topDomains = citationData.top_domains || [];\nconst engineDistribution = citationData.engine_distribution || {};\n\n// Extract insights\nconst highOpportunityGaps = gaps.gaps ? gaps.gaps.filter(gap => gap.opportunity_score >= 0.8) : [];\nconst patternInsights = patterns.insights || {};\nconst competitorThreats = competitors.threats || [];\nconst competitorOpportunities = competitors.opportunities || [];\n\n// Generate summary\nconst summary = {\n  period: `${new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toLocaleDateString()} - ${new Date().toLocaleDateString()}`,\n  total_citations: totalCitations,\n  week_over_week_growth: `${weekOverWeekGrowth > 0 ? '+' : ''}${(weekOverWeekGrowth * 100).toFixed(1)}%`,\n  key_metrics: {\n    citations_per_day: Math.round(totalCitations / 7),\n    unique_domains_cited: topDomains.length,\n    engines_active: Object.keys(engineDistribution).length\n  },\n  top_performing_domains: topDomains.slice(0, 5),\n  engine_distribution: engineDistribution,\n  high_opportunity_gaps: highOpportunityGaps.slice(0, 10),\n  pattern_insights: patternInsights.recommendations || [],\n  competitor_analysis: {\n    threats: competitorThreats.slice(0, 5),\n    opportunities: competitorOpportunities.slice(0, 5)\n  },\n  recommendations: [\n    ...patternInsights.recommendations || [],\n    ...highOpportunityGaps.slice(0, 3).map(gap => ({\n      type: 'content_creation',\n      description: `Create ${gap.suggested_content_type} for \"${gap.query_text}\"`,\n      priority: gap.priority,\n      opportunity_score: gap.opportunity_score\n    }))\n  ].slice(0, 10)\n};\n\nreturn { json: summary };"
+      },
+      "id": "7",
+      "name": "Generate Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [800, 450]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format report for Slack\nconst data = $json;\n\nconst formatPercentage = (value) => {\n  return value >= 0 ? `📈 ${value}` : `📉 ${value}`;\n};\n\nconst formatList = (items, limit = 5) => {\n  return items.slice(0, limit).map((item, index) => \n    `${index + 1}. ${typeof item === 'string' ? item : item.name || item.description || JSON.stringify(item)}`\n  ).join('\\n');\n};\n\nconst slackMessage = {\n  text: \"📊 Weekly AI Search Intelligence Report\",\n  attachments: [\n    {\n      color: \"#36a64f\",\n      title: `Performance Summary (${data.period})`,\n      fields: [\n        {\n          title: \"Total Citations\",\n          value: data.total_citations.toString(),\n          short: true\n        },\n        {\n          title: \"Week-over-Week Growth\",\n          value: formatPercentage(data.week_over_week_growth),\n          short: true\n        },\n        {\n          title: \"Daily Average\",\n          value: data.key_metrics.citations_per_day.toString(),\n          short: true\n        },\n        {\n          title: \"Unique Domains\",\n          value: data.key_metrics.unique_domains_cited.toString(),\n          short: true\n        }\n      ],\n      ts: Math.floor(Date.now() / 1000)\n    },\n    {\n      color: \"#ff9900\",\n      title: \"🎯 Top Content Opportunities\",\n      text: data.high_opportunity_gaps.slice(0, 5).map((gap, index) => \n        `${index + 1}. **${gap.query_text}** (Score: ${gap.opportunity_score.toFixed(2)})\\n   → ${gap.suggested_content_type}`\n      ).join('\\n\\n'),\n      mrkdwn_in: [\"text\"]\n    },\n    {\n      color: \"#ff6b6b\",\n      title: \"⚠️ Competitor Threats\",\n      text: data.competitor_analysis.threats.length > 0 ? \n        formatList(data.competitor_analysis.threats) : \n        \"No significant threats detected\",\n      mrkdwn_in: [\"text\"]\n    },\n    {\n      color: \"#4ecdc4\",\n      title: \"💡 Key Recommendations\",\n      text: data.recommendations.slice(0, 5).map((rec, index) => \n        `${index + 1}. ${rec.description} (${rec.priority} priority)`\n      ).join('\\n'),\n      mrkdwn_in: [\"text\"]\n    }\n  ]\n};\n\nreturn { json: slackMessage };"
+      },
+      "id": "8",
+      "name": "Format for Slack",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 350]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format report for email\nconst data = $input.first().json;\n\nconst generateHTML = (data) => {\n  return `\n<!DOCTYPE html>\n<html>\n<head>\n    <style>\n        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }\n        .header { background: #4a90e2; color: white; padding: 20px; text-align: center; }\n        .section { margin: 20px 0; padding: 15px; border-left: 4px solid #4a90e2; }\n        .metric { display: inline-block; margin: 10px 15px; text-align: center; }\n        .metric-value { font-size: 24px; font-weight: bold; color: #4a90e2; }\n        .metric-label { font-size: 12px; color: #666; }\n        .opportunity { background: #f8f9fa; padding: 10px; margin: 10px 0; border-radius: 5px; }\n        .high-priority { border-left: 4px solid #28a745; }\n        .medium-priority { border-left: 4px solid #ffc107; }\n        .low-priority { border-left: 4px solid #dc3545; }\n        ul { list-style-type: none; padding: 0; }\n        li { padding: 5px 0; }\n    </style>\n</head>\n<body>\n    <div class=\"header\">\n        <h1>📊 Weekly AI Search Intelligence Report</h1>\n        <p>${data.period}</p>\n    </div>\n    \n    <div class=\"section\">\n        <h2>📈 Performance Metrics</h2>\n        <div class=\"metric\">\n            <div class=\"metric-value\">${data.total_citations}</div>\n            <div class=\"metric-label\">Total Citations</div>\n        </div>\n        <div class=\"metric\">\n            <div class=\"metric-value\">${data.week_over_week_growth}</div>\n            <div class=\"metric-label\">Week-over-Week</div>\n        </div>\n        <div class=\"metric\">\n            <div class=\"metric-value\">${data.key_metrics.citations_per_day}</div>\n            <div class=\"metric-label\">Daily Average</div>\n        </div>\n        <div class=\"metric\">\n            <div class=\"metric-value\">${data.key_metrics.unique_domains_cited}</div>\n            <div class=\"metric-label\">Unique Domains</div>\n        </div>\n    </div>\n    \n    <div class=\"section\">\n        <h2>🎯 High-Opportunity Content Gaps</h2>\n        ${data.high_opportunity_gaps.slice(0, 10).map(gap => `\n            <div class=\"opportunity ${gap.priority}-priority\">\n                <strong>${gap.query_text}</strong> (Score: ${gap.opportunity_score.toFixed(2)})<br>\n                <em>Suggested: ${gap.suggested_content_type}</em>\n            </div>\n        `).join('')}\n    </div>\n    \n    <div class=\"section\">\n        <h2>💡 Key Recommendations</h2>\n        <ul>\n            ${data.recommendations.slice(0, 8).map(rec => `\n                <li><strong>${rec.type}:</strong> ${rec.description} <em>(${rec.priority} priority)</em></li>\n            `).join('')}\n        </ul>\n    </div>\n    \n    <div class=\"section\">\n        <h2>🏆 Top Performing Domains</h2>\n        <ul>\n            ${data.top_performing_domains.map((domain, index) => `\n                <li>${index + 1}. ${domain.name || domain} - ${domain.citations || 'N/A'} citations</li>\n            `).join('')}\n        </ul>\n    </div>\n    \n    <div class=\"section\">\n        <h2>⚠️ Competitive Intelligence</h2>\n        <h3>Threats:</h3>\n        <ul>\n            ${data.competitor_analysis.threats.map(threat => `\n                <li>${threat.description || threat}</li>\n            `).join('')}\n        </ul>\n        <h3>Opportunities:</h3>\n        <ul>\n            ${data.competitor_analysis.opportunities.map(opp => `\n                <li>${opp.description || opp}</li>\n            `).join('')}\n        </ul>\n    </div>\n    \n    <div style=\"margin-top: 30px; padding: 20px; background: #f8f9fa; text-align: center; font-size: 12px; color: #666;\">\n        <p>Generated by AI Search Intelligence System on ${new Date().toLocaleString()}</p>\n    </div>\n</body>\n</html>\n  `;\n};\n\nconst emailData = {\n  subject: `📊 Weekly AI Search Intelligence Report - ${data.period}`,\n  html: generateHTML(data),\n  recipients: (process.env.REPORT_RECIPIENTS || 'team@company.com').split(','),\n  summary: {\n    total_citations: data.total_citations,\n    growth: data.week_over_week_growth,\n    top_opportunities: data.high_opportunity_gaps.slice(0, 3)\n  }\n};\n\nreturn { json: emailData };"
+      },
+      "id": "9",
+      "name": "Format for Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 550]
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "httpMethod": "POST",
+        "url": "={{$env.SLACK_WEBHOOK_URL}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{JSON.stringify($json)}}",
+        "options": {}
+      },
+      "id": "10",
+      "name": "Send Slack Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1200, 350]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{$env.SMTP_FROM_EMAIL}}",
+        "toEmail": "={{$json.recipients.join(',')}}",
+        "subject": "={{$json.subject}}",
+        "emailType": "html",
+        "message": "={{$json.html}}",
+        "options": {}
+      },
+      "id": "11",
+      "name": "Send Email Report",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1200, 550],
+      "credentials": {
+        "smtp": {
+          "id": "email_smtp",\n          \"name\": \"Email SMTP\"\n        }\n      }\n    },\n    {\n      \"parameters\": {\n        \"requestMethod\": \"POST\",\n        \"url\": \"={{$env.AI_SEARCH_API_BASE_URL}}/api/v1/reports/weekly\",\n        \"authentication\": \"predefinedCredentialType\",\n        \"nodeCredentialType\": \"httpHeaderAuth\",\n        \"sendBody\": true,\n        \"specifyBody\": \"json\",\n        \"jsonBody\": \"={{JSON.stringify($input.first().json)}}\",\n        \"options\": {}\n      },\n      \"id\": \"12\",\n      \"name\": \"Store Report\",\n      \"type\": \"n8n-nodes-base.httpRequest\",\n      \"typeVersion\": \"4.1\",\n      \"position\": [1000, 450],\n      \"credentials\": {\n        \"httpHeaderAuth\": {\n          \"id\": \"ai_search_api\",\n          \"name\": \"AI Search API\"\n        }\n      }\n    },\n    {\n      \"parameters\": {\n        \"requestMethod\": \"POST\",\n        \"url\": \"={{$env.AI_SEARCH_API_BASE_URL}}/api/v1/action-items/bulk\",\n        \"authentication\": \"predefinedCredentialType\",\n        \"nodeCredentialType\": \"httpHeaderAuth\",\n        \"sendBody\": true,\n        \"specifyBody\": \"json\",\n        \"jsonBody\": \"={\\\"action_items\\\": {{JSON.stringify($json.recommendations.map(rec => ({\n          title: rec.description,\n          action_type: rec.type,\n          priority: rec.priority,\n          expected_impact: rec.opportunity_score || 0.5,\n          status: 'pending'\n        })))}}\",\n        \"options\": {}\n      },\n      \"id\": \"13\",\n      \"name\": \"Create Action Items\",\n      \"type\": \"n8n-nodes-base.httpRequest\",\n      \"typeVersion\": \"4.1\",\n      \"position\": [1200, 450],\n      \"credentials\": {\n        \"httpHeaderAuth\": {\n          \"id\": \"ai_search_api\",\n          \"name\": \"AI Search API\"\n        }\n      }\n    }\n  ],\n  \"connections\": {\n    \"Weekly Trigger\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Get Weekly Citation Data\",\n            \"type\": \"main\",\n            \"index\": 0\n          },\n          {\n            \"node\": \"Analyze Citation Patterns\",\n            \"type\": \"main\",\n            \"index\": 0\n          },\n          {\n            \"node\": \"Identify Content Gaps\",\n            \"type\": \"main\",\n            \"index\": 0\n          },\n          {\n            \"node\": \"Get Competitor Analysis\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Get Weekly Citation Data\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Combine Analysis Data\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Analyze Citation Patterns\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Combine Analysis Data\",\n            \"type\": \"main\",\n            \"index\": 1\n          }\n        ]\n      ]\n    },\n    \"Identify Content Gaps\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Combine Analysis Data\",\n            \"type\": \"main\",\n            \"index\": 2\n          }\n        ]\n      ]\n    },\n    \"Get Competitor Analysis\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Combine Analysis Data\",\n            \"type\": \"main\",\n            \"index\": 3\n          }\n        ]\n      ]\n    },\n    \"Combine Analysis Data\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Generate Report\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Generate Report\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Format for Slack\",\n            \"type\": \"main\",\n            \"index\": 0\n          },\n          {\n            \"node\": \"Format for Email\",\n            \"type\": \"main\",\n            \"index\": 0\n          },\n          {\n            \"node\": \"Store Report\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Format for Slack\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Send Slack Report\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Format for Email\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Send Email Report\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    },\n    \"Store Report\": {\n      \"main\": [\n        [\n          {\n            \"node\": \"Create Action Items\",\n            \"type\": \"main\",\n            \"index\": 0\n          }\n        ]\n      ]\n    }\n  },\n  \"pinData\": {},\n  \"settings\": {\n    \"executionOrder\": \"v1\"\n  },\n  \"staticData\": null,\n  \"tags\": [\n    {\n      \"id\": \"intelligence-reports\",\n      \"name\": \"Intelligence Reports\"\n    }\n  ],\n  \"triggerCount\": 1,\n  \"updatedAt\": \"2024-01-15T10:00:00.000Z\",\n  \"versionId\": \"1\"\n}"
+      },
+      "id": "11",
+      "name": "Send Email Report",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1200, 550],
+      "credentials": {
+        "smtp": {
+          "id": "email_smtp",
+          "name": "Email SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "={{$env.AI_SEARCH_API_BASE_URL}}/api/v1/reports/weekly",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{JSON.stringify($input.first().json)}}",
+        "options": {}
+      },
+      "id": "12",
+      "name": "Store Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": "4.1",
+      "position": [1000, 450],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ai_search_api",
+          "name": "AI Search API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "={{$env.AI_SEARCH_API_BASE_URL}}/api/v1/action-items/bulk",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"action_items\": {{JSON.stringify($json.recommendations.map(rec => ({title: rec.description, action_type: rec.type, priority: rec.priority, expected_impact: rec.opportunity_score || 0.5, status: 'pending'})))}}}",
+        "options": {}
+      },
+      "id": "13",
+      "name": "Create Action Items",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": "4.1",
+      "position": [1200, 450],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "ai_search_api",
+          "name": "AI Search API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Weekly Citation Data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Analyze Citation Patterns",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Identify Content Gaps",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Competitor Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Weekly Citation Data": {
+      "main": [
+        [
+          {
+            "node": "Combine Analysis Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Citation Patterns": {
+      "main": [
+        [
+          {
+            "node": "Combine Analysis Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Identify Content Gaps": {
+      "main": [
+        [
+          {
+            "node": "Combine Analysis Data",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Get Competitor Analysis": {
+      "main": [
+        [
+          {
+            "node": "Combine Analysis Data",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Combine Analysis Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Report": {
+      "main": [
+        [
+          {
+            "node": "Format for Slack",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Format for Email",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Store Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format for Slack": {
+      "main": [
+        [
+          {
+            "node": "Send Slack Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format for Email": {
+      "main": [
+        [
+          {
+            "node": "Send Email Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Report": {
+      "main": [
+        [
+          {
+            "node": "Create Action Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "id": "intelligence-reports",
+      "name": "Intelligence Reports"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-15T10:00:00.000Z",
+  "versionId": "1"
+}
